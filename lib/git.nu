@@ -7,6 +7,10 @@ use log.nu [info]
 
 # Past this many, the refs jj leaves in the git repository are tidied.
 const KEEP_REF_LIMIT = 100
+
+# Bumped when the shape of the repository below changes, so that one built by
+# an older jj-ci is rebuilt rather than used.
+const LAYOUT = "2"
 const ZERO = '^0{40,64}$'
 const ZERO_SHA = "0000000000000000000000000000000000000000"
 
@@ -34,27 +38,40 @@ export def shadow-path [common_dir: string]: nothing -> string {
 
 export def ensure-shadow [common_dir: string, root: string]: nothing -> string {
   let shadow = (shadow-path $common_dir)
-  if ($shadow | path join ".jj" | path exists) { return $shadow }
+  let stamp = ($common_dir | path join "jj-ci" "layout")
+  let built = (if ($stamp | path exists) { open --raw $stamp | str trim } else { "" })
+
+  if ($shadow | path join ".jj" | path exists) {
+    if $built == $LAYOUT { return $shadow }
+    rm -rf $shadow
+  }
 
   # jj creates the destination, but not the directory above it.
   mkdir $shadow
   let r = (with-env (identity $root) { ^jj git init $shadow --git-repo $common_dir | complete })
   if $r.exit_code != 0 {
-    rm -rf ($shadow | path join ".jj")
+    rm -rf $shadow
     error make {
       msg: $"could not create the jj repository jj-ci keeps for this git repository:\n($r.stderr | str trim)"
     }
   }
 
   # Nothing reads the files of this working copy: checks run either in the
-  # copies jj run makes or in the git working tree. Emptying it keeps the whole
-  # thing to a few hundred kilobytes of metadata.
-  let s = (with-env (identity $root) { ^jj -R $shadow sparse set --clear | complete })
+  # copies jj run makes or in the git working tree. Sitting it on an empty
+  # commit keeps the whole thing to a few hundred kilobytes of metadata.
+  #
+  # Not `jj sparse set --clear`, which does the same thing here and is wrong
+  # one step further on: since jj 0.46 `jj run` copies the workspace's sparse
+  # patterns into the copies it checks out, so an emptied workspace would hand
+  # every check an empty tree — and a check that globs for its inputs passes
+  # on one, silently, which is the worst way for a gate to fail.
+  let s = (with-env (identity $root) { ^jj -R $shadow new 'root()' | complete })
   if $s.exit_code != 0 {
-    rm -rf ($shadow | path join ".jj")
+    rm -rf $shadow
     error make { msg: $"could not empty the working copy of ($shadow):\n($s.stderr | str trim)" }
   }
 
+  $LAYOUT | save --force --raw $stamp
   info $"prepared ($shadow)"
   $shadow
 }

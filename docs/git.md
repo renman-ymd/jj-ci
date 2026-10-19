@@ -26,12 +26,21 @@ has:
 
 ```bash
 jj git init .git/jj-ci/shadow --git-repo <your .git>
-jj sparse set --clear
+jj new 'root()'
 ```
 
-The second line is what makes it cheap: the working copy of that repository
-holds no files at all, because nothing ever reads them. It is metadata and
-nothing else.
+The second line is what makes it cheap: its working-copy commit is empty, so
+the working copy holds no files at all. Nothing ever reads them — checks run
+either in the copies `jj run` makes or in your own working tree — so the whole
+thing is metadata and nothing else.
+
+Not `jj sparse set --clear`, which empties the working copy just as well and is
+wrong one step further on. Since jj 0.46, `jj run` copies the workspace's
+sparse patterns into the copies it checks out, so an emptied workspace would
+hand every check an empty tree. A check that globs for its inputs passes on an
+empty tree, silently — a gate that reports green having examined nothing. An
+empty *commit* has no such effect: the patterns stay at their default, and the
+copies are complete.
 
 Your working tree never learns about it. There is no `.jj` beside your files,
 nothing to add to `.gitignore`, and `git status` is unchanged. Because it lives

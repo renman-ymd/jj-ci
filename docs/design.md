@@ -26,8 +26,8 @@ instead of git worktrees, so it needs no colocated git repository.
 jj-ci runs in a repository that has only a `.git`, for someone who does not use
 jj. It does that without a second implementation of anything: it gives the
 repository **a jj repository of its own**, inside `.git`, backed by the object
-store that is already there, with a working copy emptied by `jj sparse set
---clear`. Your working tree never sees it. The whole of the above — `jj run`,
+store that is already there, sitting on an empty commit so that its own working
+copy holds no files. Your working tree never sees it. The whole of the above — `jj run`,
 filesets, `jj fix`, the cache — then applies unchanged, because what it is
 looking at is a jj repository like any other.
 
