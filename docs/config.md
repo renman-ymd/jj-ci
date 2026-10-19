@@ -89,6 +89,20 @@ changes; anything outside the markers is left alone, and jj-ci refuses to render
 if the file declares `[fix.tools]` or `[fileset-aliases]` of its own rather than
 silently producing TOML that means something else.
 
+## The same file under git
+
+Nothing in `.jj-ci.toml` names a version control system, and nothing here has a
+git-only spelling: filesets stay jj filesets, because jj is what matches them
+either way. Two keys mean slightly more under git than under jj:
+
+- `[format.*]` is still read and still rendered, but `--fix` is refused there,
+  since a rewritten commit would exist only inside jj-ci's own repository.
+- `workspace = true` runs the check in a real git working copy, with an index
+  and a `.git`. The runners that cannot work under jj — pre-commit, lefthook,
+  hk — work under it.
+
+[git.md](./git.md) has the rest.
+
 ## Filesets: use `root-glob:`, not `glob:`
 
 `glob:` is resolved against the directory you are standing in. `glob:"**/*.ts"`

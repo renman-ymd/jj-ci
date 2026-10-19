@@ -5,6 +5,11 @@ handful of `jj-ci …` subcommands. Installing the aliases is covered in
 [install.md](./install.md); what the checks themselves are is
 [config.md](./config.md).
 
+Driving a git repository, `jj push` is replaced by the `pre-push` hook and
+everything else below still applies, with the differences collected in
+[git.md](./git.md). Every command takes `--vcs jj|git` to override what the
+repository would otherwise say.
+
 ## `jj push [jj git push arguments…]`
 
 Runs the `push` stage over exactly what would be published, then publishes it.
@@ -69,7 +74,9 @@ target stays where it is.
 Runs a stage on demand. Defaults to the `push` stage over
 `reachable(@, mutable())` — with the usual `immutable_heads()` that includes
 remote bookmarks, that is your unpushed work, the same set `jj fix` and `jj run`
-default to.
+default to. In a git repository the default is `remote_bookmarks()..HEAD`, which
+is the same idea said in the terms available there, and the command is spelled
+`jj-ci ci`.
 
 `--stage S`, `-r REVSET`, `--here`, `--fix`, `--only A,B`, `--no-cache`,
 `--jobs N`, `--verbose`, `--strict`.
@@ -82,7 +89,10 @@ one means the check ran and found nothing of its own to do.
 
 `--here` checks the working copy as it is, with no checkout and no bootstrap —
 the tight loop, where your `node_modules` already exists. It is weaker than the
-default by construction: it describes your disk, not a commit.
+default by construction: it describes your disk, not a commit. Under git it
+means the working tree, untracked files included; see
+[git.md](./git.md#what-differs-from-the-jj-side) for how `paths` is matched
+against files that are in no commit yet.
 
 ## `jj-ci checks [stage] [--json]`
 
@@ -98,9 +108,13 @@ for the list is usually not the one that will run them.
 `init` writes a starting `.jj-ci.toml`; `--detect` starts from a hook runner
 already configured in the repository.
 
-`doctor` reports the jj and nushell versions, whether the aliases are installed,
-whether the repository is colocated (which decides whether a git-based runner
-can work at all), which checks exist in which stage, whether the rendered jj
-config is in sync, and which required tools are missing.
+`doctor` reports the jj and nushell versions, which of the two version control
+systems this repository is driven with, which checks exist in which stage,
+whether the rendered jj config is in sync, and which required tools are
+missing. Under jj it adds whether the aliases are installed and whether the
+repository is colocated (which decides whether a git-based runner can work at
+all); under git, where jj-ci's own jj repository sits, how many refs it has
+left behind, and whether each hook is in place.
 
-`install` and `completions` are covered in [install.md](./install.md).
+`install` writes whichever of the two this repository needs: the jj aliases, or
+the git hooks. Both are covered in [install.md](./install.md).

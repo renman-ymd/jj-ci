@@ -4,7 +4,7 @@
 
 const LIB = path self "../lib"
 use $"($LIB)/log.nu" *
-use $"($LIB)/jj.nu"
+use $"($LIB)/vcs.nu"
 use $"($LIB)/detect.nu"
 
 const RUNNER_TEMPLATE = r#'
@@ -78,8 +78,8 @@ command = ["make", "build"]
 # input = "description"    # the description arrives on stdin, no checkout
 '#
 
-export def invoke [detect_runner: bool, force: bool]: nothing -> int {
-  let root = (jj root)
+export def invoke [detect_runner: bool, force: bool, backend: string]: nothing -> int {
+  let root = (vcs workspace-root $backend)
   let dest = ($root | path join ".jj-ci.toml")
 
   if ($dest | path exists) and (not $force) {
@@ -95,7 +95,11 @@ export def invoke [detect_runner: bool, force: bool]: nothing -> int {
   if $found != null {
     info $"wired to ($found.name), detected from ($found.marker)"
   }
-  info "edit it, then run `jj ci` to try it, or `jj push` to gate a publish"
+  if (vcs backend $backend) == "jj" {
+    info "edit it, then run `jj ci` to try it, or `jj push` to gate a publish"
+  } else {
+    info "edit it, then run `jj-ci ci` to try it, and `jj-ci install` to gate `git push`"
+  }
   0
 }
 

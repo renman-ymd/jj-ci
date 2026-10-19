@@ -2,8 +2,10 @@
 
 [jj-ci](../README.md) ships as a GitHub action, so the same `.jj-ci.toml` drives
 the remote build and the list of things that must be green stops existing in two
-places. The action colocates a jj repository onto the checkout, works out which
-revisions the event added, and runs a stage over them.
+places. The action works out which revisions the event added and runs a stage
+over them. The checkout is left as `actions/checkout` made it — a git checkout,
+with no `.jj` written into it: jj-ci keeps its own jj repository inside `.git`,
+the same way it does on a [git user's machine](./git.md).
 
 ```yaml
 - uses: actions/checkout@v5
@@ -45,9 +47,12 @@ is in scope, never the scope key.
 Given history, the range comes from the event: a pull request's own commits
 (`base..head`, so the merge commit GitHub checks out is not itself judged), the
 pushed range on a `push`, `base_sha..head_sha` in a merge queue. A new branch, a
-force push and `workflow_dispatch` have no usable range and fall back to `@-`,
-the commit that was checked out. `revisions:` overrides all of that, and an
-explicit revset naming nothing is an error rather than a quiet pass.
+force push and `workflow_dispatch` have no usable range and fall back to the
+commit that was checked out. `revisions:` overrides all of that, and is passed
+through untouched: it may use anything jj understands, which is more than git
+could be asked about. With `strict` on, as it is by default, a revset naming
+nothing is still an error rather than a quiet pass — jj-ci reports it instead
+of the action.
 
 ## One job per check
 

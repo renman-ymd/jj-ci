@@ -2,7 +2,6 @@ use jj.nu
 use cache.nu
 
 export def build [
-  root: string
   cfg: record
   stage: string
   revs: table # oldest first
@@ -77,7 +76,7 @@ export def build [
 }
 
 # Properties of the machine, not of a revision, so evaluated once.
-def environment-status [c: record]: nothing -> record {
+export def environment-status [c: record]: nothing -> record {
   let missing = ($c.requires | where { |bin| which $bin | is-empty })
   if ($missing | is-not-empty) {
     return {

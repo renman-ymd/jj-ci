@@ -6,7 +6,9 @@ set -euo pipefail
 
 cd "${WORKDIR:-.}"
 
-args=(ci --stage "${STAGE:-push}" --revisions "$REVISIONS" --jobs "${JOBS:-1}")
+# --vcs git: actions/checkout always leaves a git checkout, and saying so keeps
+# the run from depending on what a repository happens to contain.
+args=(ci --vcs git --stage "${STAGE:-push}" --revisions "$REVISIONS" --jobs "${JOBS:-1}")
 
 [ "${STRICT:-true}" != true ] || args+=(--strict)
 [ "${VERBOSE:-false}" != true ] || args+=(--verbose)

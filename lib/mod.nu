@@ -1,5 +1,7 @@
 export use log.nu
 export use jj.nu
+export use git.nu
+export use vcs.nu
 export use config.nu
 export use render.nu
 export use cache.nu

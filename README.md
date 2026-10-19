@@ -8,6 +8,10 @@ The tool knows nothing about any language, formatter or test runner. A check is
 a command; jj-ci decides which revisions to run it on, materialises them, and
 reports what happened.
 
+It also runs in a **plain git repository**, with no `.jj` anywhere and nobody on
+the team using jj. The gate is then the `pre-push` hook and the policy is the
+same file: [git.md](docs/git.md).
+
 ## The gate is `jj push`, not `jj commit`
 
 jj has no hooks, and a pre-commit hook would not fit it if it did. A commit
@@ -18,6 +22,10 @@ the point of the tool.
 The moment that really corresponds to a git pre-commit hook is **publication**.
 So the gate is `jj push`, and it checks exactly what `jj git push` is about to
 send. The [reasoning, in full](docs/design.md).
+
+Driving git, the same argument lands on `pre-push`, which is a hook git already
+has. `commit-msg` is there too, since a message is worth catching while
+`--amend` is still a one-liner — but it is the fast feedback, not the gate.
 
 ## Quick start
 
@@ -34,6 +42,15 @@ jj-ci doctor        # what works here, and what does not
 A repository with no `.jj-ci.toml` is untouched: `jj push` there tugs the
 nearest bookmark forward and calls `jj git push`, much like the common alias it
 replaces.
+
+In a git repository the shape is the same, with `git push` as the gate:
+
+```bash
+cd some-git-repo
+jj-ci init
+jj-ci install       # writes the pre-push and commit-msg hooks
+git push            # runs the push stage, then publishes
+```
 
 ## A policy, in miniature
 
@@ -76,6 +93,7 @@ action](docs/github-actions.md).
 | [install.md](docs/install.md) | the module, the two jj aliases, nushell completions |
 | [config.md](docs/config.md) | `.jj-ci.toml`: checks, stages, filesets, formatters |
 | [commands.md](docs/commands.md) | `jj push`, `jj ci`, `jj-ci checks`, tugging |
+| [git.md](docs/git.md) | driving a git repository: the hooks, and what differs |
 | [github-actions.md](docs/github-actions.md) | the action, the matrix, checkout depth |
 | [design.md](docs/design.md) | why it is shaped this way, how it runs things, prior art |
 
@@ -84,6 +102,10 @@ action](docs/github-actions.md).
 jj **0.44+** (`jj run --ignore-changes`, `--passthrough`) and nushell. Developed
 and tested against jj 0.45.1 and nushell 0.115.1. No colocated git repository is
 needed, unlike the git-worktree approaches this replaces.
+
+jj is required as a program, not as your version control system: in a git
+repository jj-ci keeps a jj repository of its own inside `.git`, and your
+working tree never sees it.
 
 ## Prior art
 

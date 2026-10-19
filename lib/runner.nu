@@ -5,7 +5,7 @@ use exec.nu
 use plan.nu
 
 export def execute [
-  root: string
+  repo: record # { backend, root, jj_root, git_dir }
   cfg: record
   stage: string
   revs: table
@@ -14,10 +14,10 @@ export def execute [
   self_cmd: list<string> # how to re-invoke jj-ci inside jj run
   opts: record # { no_cache, only, verbose, here, jobs, strict }
 ]: nothing -> int {
-  let cache_dir = (cache dir $root $cfg.hash)
-  cache prune $root $cfg.hash
+  let cache_dir = (cache dir $repo.jj_root $cfg.hash)
+  cache prune $repo.jj_root $cfg.hash
 
-  let p = (plan build $root $cfg $stage $revs $tips $range $cache_dir $opts.only $opts.no_cache)
+  let p = (plan build $cfg $stage $revs $tips $range $cache_dir $opts.only $opts.no_cache)
 
   # Nothing to run is a green run, which on a remote runner is indistinguishable
   # from a stage that passed.
@@ -64,7 +64,7 @@ export def execute [
       let check = ($by_name | get $e.check)
       let stdin = (if $check.input == "description" { jj description $e.commit } else { null })
       let argv = (exec argv-for $check $e.files)
-      let r = (exec run-one $argv $root $stdin $opts.verbose)
+      let r = (exec run-one $argv $repo.root $stdin $opts.verbose)
       verdict $e.change $e.check $r.status (exec fmt-duration $r.seconds)
       if $r.status == "fail" and ($r.output | is-not-empty) { print $r.output }
       if $r.status == "pass" and $check.cache { cache store $cache_dir $e.commit $e.check }
@@ -78,13 +78,13 @@ export def execute [
     return (summary $results)
   }
 
-  let scratch = (cache dir $root $cfg.hash | path join "runs" (random chars --length 8))
+  let scratch = (cache dir $repo.jj_root $cfg.hash | path join "runs" (random chars --length 8))
   mkdir ($scratch | path join "results")
 
   let plan_file = ($scratch | path join "plan.json")
   {
     bootstrap: $cfg.bootstrap
-    marker_dir: ($root | path join ".jj" "jj-ci" "bootstrap")
+    marker_dir: ($repo.jj_root | path join ".jj" "jj-ci" "bootstrap")
     cache_dir: $cache_dir
     results_dir: ($scratch | path join "results")
     verbose: $opts.verbose

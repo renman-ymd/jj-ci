@@ -7,7 +7,7 @@ set -euo pipefail
 
 cd "${WORKDIR:-.}"
 
-matrix=$(nu "$JJ_CI_ENTRY" checks "${STAGE:-push}" --json)
+matrix=$(nu "$JJ_CI_ENTRY" checks "${STAGE:-push}" --json --vcs git)
 
 count=$(printf '%s' "$matrix" | grep -o '"check":' | wc -l | tr -d ' ')
 

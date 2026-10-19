@@ -42,7 +42,7 @@ export def block [cfg: record]: nothing -> string {
   ] | str join "\n")
 }
 
-export def ensure [root: string, cfg: record]: nothing -> bool {
+export def ensure [cfg: record]: nothing -> bool {
   let wanted = (block $cfg)
   let dest = (jj repo-config-path)
   let current = (if ($dest | path exists) { open --raw $dest } else { "" })

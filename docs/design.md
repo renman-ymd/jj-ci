@@ -21,6 +21,28 @@ the `jj-hooks` and `jj-pre-push` projects, and aazuspan's write-up. jj-ci
 differs from those three in one respect: it builds on `jj run` (jj 0.43+)
 instead of git worktrees, so it needs no colocated git repository.
 
+## Why a git repository is still a jj repository
+
+jj-ci runs in a repository that has only a `.git`, for someone who does not use
+jj. It does that without a second implementation of anything: it gives the
+repository **a jj repository of its own**, inside `.git`, backed by the object
+store that is already there, with a working copy emptied by `jj sparse set
+--clear`. Your working tree never sees it. The whole of the above — `jj run`,
+filesets, `jj fix`, the cache — then applies unchanged, because what it is
+looking at is a jj repository like any other.
+
+The alternative was a second runner built on `git worktree add --detach`, which
+is a real equivalent of what `jj run` materialises. What git has no equivalent
+of is the rest: iterating a revset, reusing a copy per slot, `--ignore-changes`,
+the fileset language that `paths` and `[format.*]` are written in. Writing that
+twice would mean two sets of semantics to keep honest, and the second set would
+be the one nobody tests.
+
+The cost is paid in the one place it cannot be hidden: jj pins every commit it
+imports with a ref under `refs/jj/keep/` in the real git repository, and they
+accumulate. [git.md](./git.md) says what jj-ci does about that, and what else
+differs.
+
 ## How it runs things
 
 **Materialisation.** Anything that needs files is handed to one `jj run

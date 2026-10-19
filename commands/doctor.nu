@@ -1,49 +1,64 @@
 const LIB = path self "../lib"
 use $"($LIB)/log.nu" *
 use $"($LIB)/jj.nu"
+use $"($LIB)/git.nu"
+use $"($LIB)/vcs.nu"
 use $"($LIB)/config.nu"
 use $"($LIB)/render.nu"
 use $"($LIB)/detect.nu"
 
-export def invoke [bin: string]: nothing -> int {
+const HOOKS = ["pre-push" "commit-msg"]
+
+export def invoke [bin: string, backend: string]: nothing -> int {
   title "environment"
   line "jj" (jj version)
   line "nushell" $"nu (version | get version)"
   line "jj-ci" $bin
   line "on PATH" (if (which jj-ci | is-not-empty) { "yes" } else { "no — aliases need the absolute path" })
 
-  let ci_alias = (alias-of "ci")
-  let push_alias = (alias-of "push")
-  line "alias jj ci" $ci_alias
-  line "alias jj push" $push_alias
-
-  let root = (try { jj root } catch { null })
-  if $root == null {
+  let repo = (try { vcs detect $backend } catch { null })
+  if $repo == null {
     print ""
-    warn "not inside a jj repository — run this again from one to check its policy"
+    warn "not inside a jj or git repository — run this again from one to check its policy"
     return 0
   }
 
   print ""
   title "repository"
-  line "root" $root
-  line "colocated" (
-    if (($root | path join ".git") | path exists) { "yes" } else {
-      "no — a git-based hook runner (pre-commit, lefthook, hk) cannot run here"
-    }
-  )
+  line "root" $repo.root
+  line "driven with" $repo.backend
 
-  let file = (config find $root)
+  if $repo.backend == "jj" {
+    line "alias jj ci" (alias-of "ci")
+    line "alias jj push" (alias-of "push")
+    line "colocated" (
+      if (($repo.root | path join ".git") | path exists) { "yes" } else {
+        "no — a git-based hook runner (pre-commit, lefthook, hk) cannot run here"
+      }
+    )
+  } else {
+    line "jj repository" $repo.jj_root
+    line "refs left" (refs-note $repo.root)
+    for name in $HOOKS { line $"hook ($name)" (hook-state $repo $name) }
+  }
+
+  let file = (config find $repo.root)
   if $file == null {
-    line "policy" "none — `jj push` here behaves exactly like `jj git push`"
-    let found = (detect probe $root)
+    line "policy" (
+      if $repo.backend == "jj" {
+        "none — `jj push` here behaves exactly like `jj git push`"
+      } else {
+        "none — the hooks let every push and every message through"
+      }
+    )
+    let found = (detect probe $repo.root)
     if $found != null {
       info $"($found.marker) is present; `jj-ci init --detect` would wire ($found.name) up"
     }
     return 0
   }
 
-  let cfg = (try { config load $root } catch { |e|
+  let cfg = (try { config load $repo.root } catch { |e|
     line "policy" $"($file) — (ansi red)invalid(ansi reset)"
     print ($e.msg)
     return 1
@@ -58,14 +73,20 @@ export def invoke [bin: string]: nothing -> int {
     | str join "; "
   )
   line "formatters" (
-    if ($cfg.format | columns | is-empty) { "none" } else { $cfg.format | columns | str join ", " }
+    if ($cfg.format | columns | is-empty) {
+      "none"
+    } else if $repo.backend == "git" {
+      ($cfg.format | columns | str join ", ") + " — declared, but --fix needs jj"
+    } else {
+      $cfg.format | columns | str join ", "
+    }
   )
   line "bootstrap" (
     if $cfg.bootstrap == null { "none" } else { $cfg.bootstrap.command | str join " " }
   )
 
-  cd $root
-  let rendered = (try { render ensure $root $cfg; "in sync" } catch { |e| $e.msg })
+  cd $repo.jj_root
+  let rendered = (try { render ensure $cfg; "in sync" } catch { |e| $e.msg })
   line "repo config" $rendered
 
   let missing = (
@@ -78,6 +99,20 @@ export def invoke [bin: string]: nothing -> int {
   0
 }
 
+def hook-state [repo: record, name: string]: nothing -> string {
+  let path = (git hooks-dir $repo.root $repo.git_dir | path join $name)
+  if not ($path | path exists) { return "not installed — run `jj-ci install`" }
+  if ((open --raw $path) | str contains "jj-ci") {
+    $path
+  } else {
+    $"($path) — written by something else"
+  }
+}
+
+def refs-note [root: string]: nothing -> string {
+  $"(git keep-refs $root) under refs/jj/ — jj pins what it imports, and jj-ci tidies them as they build up"
+}
+
 def alias-of [name: string]: nothing -> string {
   let r = (^jj config list $"aliases.($name)" | complete)
   if $r.exit_code != 0 or ($r.stdout | str trim | is-empty) {
@@ -88,5 +123,5 @@ def alias-of [name: string]: nothing -> string {
 }
 
 def line [key: string, value: string] {
-  print $"  ($key | fill -a l -w 14) ($value)"
+  print $"  ($key | fill -a l -w 15) ($value)"
 }

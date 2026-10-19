@@ -2,6 +2,7 @@ const LIB = path self "../lib"
 
 use $"($LIB)/log.nu" *
 use $"($LIB)/jj.nu"
+use $"($LIB)/vcs.nu"
 use $"($LIB)/config.nu"
 use $"($LIB)/render.nu"
 use $"($LIB)/runner.nu"
@@ -11,8 +12,17 @@ const OWN_VALUE_FLAGS = [--stage --only --jobs]
 
 export def invoke [self_cmd: list<string>, rest: list<string>]: nothing -> int {
   let args = (split-args $rest)
-  let root = (jj root)
-  cd $root
+  let repo = (vcs detect "")
+
+  # git publishes through its own command, and gates it with the hook jj-ci
+  # installs; there is no `jj git push` here to wrap.
+  if $repo.backend == "git" {
+    err "this is a git repository — push with `git push`, which the pre-push hook gates"
+    info "run `jj-ci install` if that hook is not in place yet"
+    return 1
+  }
+
+  cd $repo.root
   jj snapshot
 
   # A dry run is a question, not a publication.
@@ -22,7 +32,7 @@ export def invoke [self_cmd: list<string>, rest: list<string>]: nothing -> int {
 
   if not $args.own.no_tug { jj tug }
 
-  let file = (config find $root)
+  let file = (config find $repo.root)
   if $file == null {
     return (push-now $args.passthru)
   }
@@ -32,8 +42,8 @@ export def invoke [self_cmd: list<string>, rest: list<string>]: nothing -> int {
     return (push-now $args.passthru)
   }
 
-  let cfg = (config load $root)
-  render ensure $root $cfg
+  let cfg = (config load $repo.root)
+  render ensure $cfg
 
   # Before the dry run: rewriting moves the bookmarks. The revset is jj fix's
   # own default, the published range not being known yet.
@@ -76,7 +86,7 @@ export def invoke [self_cmd: list<string>, rest: list<string>]: nothing -> int {
   )
   title $"($label) — ((plural ($revs | length) 'revision')), stage ($args.own.stage)"
 
-  let code = (runner execute $root $cfg $args.own.stage $revs $tips $revset $self_cmd {
+  let code = (runner execute $repo $cfg $args.own.stage $revs $tips $revset $self_cmd {
     no_cache: $args.own.no_cache, only: $args.own.only, verbose: $args.own.verbose,
     here: false, jobs: $args.own.jobs, strict: false
   })

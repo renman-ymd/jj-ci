@@ -13,15 +13,27 @@ def self-cmd []: nothing -> list<string> {
   [$nu.current-exe "--no-config-file" $SELF]
 }
 
+const VERDICT = "jj-ci: "
+
 # Interactively, returning an exit code would print a stray `0`.
 def raise [code: int, msg: string]: nothing -> nothing {
-  if $code != 0 { error make --unspanned { msg: $msg } }
+  if $code != 0 { error make --unspanned { msg: ($VERDICT + $msg) } }
+}
+
+# Run as a script, a raised error has nowhere to surface: nushell renders one
+# only for the module commands. Without this, a refusal — or a git hook that
+# could not read the repository — would be an exit code and nothing else. A
+# run that merely ended in a red verdict has already said so itself.
+def fail [e: record]: nothing -> nothing {
+  let msg = ($e | get -o msg | default "")
+  if not ($msg | str starts-with $VERDICT) { err (if ($msg | is-empty) { "failed" } else { $msg }) }
+  exit 1
 }
 
 # Run a stage of this repository's checks over a revset.
 export def ci [
   --stage (-s): string = "push" # stage to run: push, ci, or any name the repo invents
-  --revisions (-r): string # revset to check (default: reachable(@, mutable()))
+  --revisions (-r): string # revset to check (default: the unpushed commits)
   --here # check the working copy as it is, instead of isolated checkouts
   --fix # run jj fix over the same revisions first
   --no-cache # ignore remembered green results
@@ -29,20 +41,22 @@ export def ci [
   --jobs (-j): int = 1 # revisions to check in parallel; above 1, output is captured
   --verbose # stream each check's output instead of showing it only on failure
   --strict # a check that cannot run here fails instead of being skipped
+  --vcs: string = "" # force jj or git, instead of reading the repository
 ]: nothing -> nothing {
   raise (
-    commands ci invoke (self-cmd) $stage $revisions $here $fix $no_cache (
+    commands ci invoke (self-cmd) $vcs $stage $revisions $here $fix $no_cache (
       $only | split row "," | where { |s| ($s | str trim) != "" }
     ) $verbose $jobs $strict
-  ) "jj-ci: checks failed"
+  ) "checks failed"
 }
 
 # Checks a stage would run here, without running any of them.
 export def checks [
   stage: string = "push" # stage to list
   --json # one line of JSON, for a CI matrix
+  --vcs: string = "" # force jj or git, instead of reading the repository
 ]: nothing -> any {
-  let rows = (commands checks invoke $stage)
+  let rows = (commands checks invoke $stage $vcs)
   if $json { $rows | to json --raw } else { $rows }
 }
 
@@ -52,26 +66,28 @@ export def --wrapped push [...rest: string]: nothing -> nothing {
     print (push-help)
     return
   }
-  raise (commands push invoke (self-cmd) $rest) "jj-ci: push aborted"
+  raise (commands push invoke (self-cmd) $rest) "push aborted"
 }
 
 # Write a starting .jj-ci.toml in this repository.
 export def init [
   --detect # start from a hook runner already configured here
   --force # overwrite an existing file
+  --vcs: string = "" # force jj or git, instead of reading the repository
 ]: nothing -> nothing {
-  raise (commands init invoke $detect $force) "jj-ci: nothing written"
+  raise (commands init invoke $detect $force $vcs) "nothing written"
 }
 
-# Print the jj aliases to add to your user config.
+# Wire jj-ci in: the two jj aliases, or the git hooks, whichever this is.
 export def install [
-  --format: string = "both" # toml, nix, or both
-  --on-path # emit the bare name, for when jj-ci is on PATH
-  --write # write them with `jj config set --user` instead of printing
+  --format: string = "both" # toml, nix, or both; jj only
+  --on-path # emit the bare name, for when jj-ci is on PATH; jj only
+  --write # write them with `jj config set --user` instead of printing; jj only
+  --vcs: string = "" # force jj or git, instead of reading the repository
 ]: nothing -> nothing {
   raise (
-    commands install invoke ($ROOT | path join "bin" "jj-ci") $format $on_path $write
-  ) "jj-ci: aliases not installed"
+    commands install invoke ($ROOT | path join "bin" "jj-ci") (self-cmd) $format $on_path $write $vcs
+  ) "not installed"
 }
 
 # Shell completions for the jj aliases. Nushell only — see --help.
@@ -84,24 +100,49 @@ export def completions [
 }
 
 # Report what jj-ci can and cannot do in this repository.
-export def doctor []: nothing -> nothing {
-  raise (commands doctor invoke ($ROOT | path join "bin" "jj-ci")) "jj-ci: this repository has a problem"
+export def doctor [
+  --vcs: string = "" # force jj or git, instead of reading the repository
+]: nothing -> nothing {
+  raise (
+    commands doctor invoke ($ROOT | path join "bin" "jj-ci") $vcs
+  ) "this repository has a problem"
+}
+
+# Run a git hook. `jj-ci install` writes these into .git/hooks; the pre-push
+# one is fed the refs git is about to send, on stdin.
+export def "hook pre-push" []: nothing -> nothing {
+  raise (commands hook pre-push (self-cmd) (stdin-text)) "push aborted"
+}
+
+export def "hook commit-msg" [
+  file: string # the file holding the proposed message
+]: nothing -> nothing {
+  raise (commands hook commit-msg $file) "commit aborted"
+}
+
+# A `main` subcommand is handed nothing in `$in`, whatever is piped at it.
+def stdin-text []: nothing -> string {
+  try { open --raw /dev/stdin } catch { "" }
 }
 
 export def main []: nothing -> nothing {
-  print $"jj-ci — local checks for jj repositories
+  print $"jj-ci — local checks for jj and git repositories
 
   (ansi cyan)jj ci(ansi reset) [--stage S] [-r REVSET] [--here] [--fix]    run a stage
   (ansi cyan)jj push(ansi reset) [jj git push args…] [--no-verify]        gate, then publish
 
+In a git repository the gate is the pre-push hook instead, and `jj-ci ci` is
+how you run a stage by hand.
+
   (ansi cyan)jj-ci checks(ansi reset) [stage] [--json]          list a stage without running it
   (ansi cyan)jj-ci init(ansi reset) [--detect]                 write a .jj-ci.toml here
-  (ansi cyan)jj-ci install(ansi reset) [--format nix|toml]     the two jj aliases to add
+  (ansi cyan)jj-ci install(ansi reset)                         the jj aliases, or the git hooks
   (ansi cyan)jj-ci completions(ansi reset) nushell             completions for those aliases
   (ansi cyan)jj-ci doctor(ansi reset)                          what works here, what does not
 
-Add --help to any of them. Policy lives in .jj-ci.toml, at the repository root.
-In nushell, `use ($ROOT)` gives the same commands with native help."
+Add --help to any of them. Policy lives in .jj-ci.toml, at the repository root,
+and is the same file whichever of the two you drive. In nushell, `use ($ROOT)`
+gives the same commands with native help."
 }
 
 def push-help []: nothing -> string {
@@ -134,32 +175,42 @@ def "main ci" [
   --jobs (-j): int = 1
   --verbose
   --strict
+  --vcs: string = ""
 ]: nothing -> nothing {
   try {
     (ci --stage $stage --revisions $revisions --here=$here --fix=$fix
         --no-cache=$no_cache --only $only --jobs $jobs --verbose=$verbose
-        --strict=$strict)
-  } catch { exit 1 }
+        --strict=$strict --vcs $vcs)
+  } catch { |e| fail $e }
 }
 
-def "main checks" [stage: string = "push", --json]: nothing -> nothing {
-  try { print (checks $stage --json=$json) } catch { |e| err $e.msg; exit 1 }
+def "main checks" [stage: string = "push", --json, --vcs: string = ""]: nothing -> nothing {
+  try { print (checks $stage --json=$json --vcs $vcs) } catch { |e| fail $e }
 }
 
 def --wrapped "main push" [...rest: string]: nothing -> nothing {
-  try { push ...$rest } catch { exit 1 }
+  try { push ...$rest } catch { |e| fail $e }
 }
 
-def "main init" [--detect, --force]: nothing -> nothing {
-  try { init --detect=$detect --force=$force } catch { exit 1 }
+def "main init" [--detect, --force, --vcs: string = ""]: nothing -> nothing {
+  try { init --detect=$detect --force=$force --vcs $vcs } catch { |e| fail $e }
 }
 
 def "main install" [
   --format: string = "both"
   --on-path
   --write
+  --vcs: string = ""
 ]: nothing -> nothing {
-  try { install --format $format --on-path=$on_path --write=$write } catch { exit 1 }
+  try { install --format $format --on-path=$on_path --write=$write --vcs $vcs } catch { |e| fail $e }
+}
+
+def "main hook pre-push" []: nothing -> nothing {
+  try { hook pre-push } catch { |e| fail $e }
+}
+
+def "main hook commit-msg" [file: string]: nothing -> nothing {
+  try { hook commit-msg $file } catch { |e| fail $e }
 }
 
 def "main completions" [
@@ -167,11 +218,11 @@ def "main completions" [
   --ci-alias: string = "ci"
   --push-alias: string = "push"
 ]: nothing -> nothing {
-  try { completions $shell --ci-alias $ci_alias --push-alias $push_alias } catch { exit 1 }
+  try { completions $shell --ci-alias $ci_alias --push-alias $push_alias } catch { |e| fail $e }
 }
 
-def "main doctor" []: nothing -> nothing {
-  try { doctor } catch { exit 1 }
+def "main doctor" [--vcs: string = ""]: nothing -> nothing {
+  try { doctor --vcs $vcs } catch { |e| fail $e }
 }
 
 def "main __revision" []: nothing -> nothing {

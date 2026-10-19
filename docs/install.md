@@ -35,6 +35,22 @@ jj-ci is a syntax error in your shell startup, not just a broken jj-ci. The
 `parse` and `load` checks in this repository's own `.jj-ci.toml` exist partly
 for that.
 
+## The git hooks
+
+In a git repository `jj-ci install` writes `pre-push` and `commit-msg` instead,
+into `.git/hooks` or wherever `core.hooksPath` points:
+
+```bash
+~/Scripts/jj-ci/bin/jj-ci install
+```
+
+Each hook names the nushell interpreter by absolute path, because a hook
+inherits whatever environment spawned it and a GUI git client usually has none
+of your `PATH`. A hook jj-ci did not write is never overwritten: the lines to
+add are printed instead, so a repository already running husky or lefthook
+stays yours to wire up. What the two hooks check, and what else differs under
+git, is [git.md](./git.md).
+
 ## The jj aliases
 
 Two jj aliases gate `jj push`. jj refuses to load command aliases from
