@@ -44,12 +44,25 @@ into `.git/hooks` or wherever `core.hooksPath` points:
 ~/Scripts/jj-ci/bin/jj-ci install
 ```
 
-Each hook names the nushell interpreter by absolute path, because a hook
-inherits whatever environment spawned it and a GUI git client usually has none
-of your `PATH`. A hook jj-ci did not write is never overwritten: the lines to
-add are printed instead, so a repository already running husky or lefthook
-stays yours to wire up. What the two hooks check, and what else differs under
-git, is [git.md](./git.md).
+Each hook names the nushell interpreter and jj-ci itself by absolute path,
+because a hook inherits whatever environment spawned it and a GUI git client
+usually has none of your `PATH`.
+
+**Re-run the command whenever either path moves.** Under Nix that is every
+update of nushell, since its store path changes; it is also what happens if you
+move jj-ci itself. Re-running rewrites both paths in place and reports
+`refreshed` rather than `wrote`. A hook jj-ci wrote is always overwritten; one
+it did not write is never touched — the lines to add are printed instead, so a
+repository already running husky or lefthook stays yours to wire up.
+
+A hook whose paths have moved is not silently dead. It falls back to whatever
+`nu` is on `PATH`, so in a terminal the gate keeps working, and when there is
+no `nu` either it exits nonzero saying to run `jj-ci install` again rather than
+leaving you a bare `No such file or directory`. `jj-ci doctor` names the moved
+path, so it is worth a glance after a rebuild.
+
+What the two hooks check, and what else differs under git, is
+[git.md](./git.md).
 
 ## The jj aliases
 

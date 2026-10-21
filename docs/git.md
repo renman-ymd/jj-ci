@@ -94,9 +94,16 @@ who has not installed anything, and so does `--no-verify`. `commit-msg` is the
 fast feedback, while `git commit --amend` is still a one-liner; `pre-push` is
 the gate.
 
-The interpreter is written into each hook by absolute path. Git hooks inherit
-whatever environment spawned them, and a GUI client usually has none of your
-`PATH`; a gate that quietly does not run is worse than no gate.
+The interpreter and jj-ci itself are written into each hook by absolute path.
+Git hooks inherit whatever environment spawned them, and a GUI client usually
+has none of your `PATH`; a gate that quietly does not run is worse than no
+gate.
+
+Those paths move — under Nix, on every update of nushell. **Re-running `jj-ci
+install` rewrites them**, and until you do, the hook falls back to `nu` on
+`PATH` so the gate keeps working in a terminal, or exits nonzero telling you to
+re-run it when there is no `nu` to fall back to. `jj-ci doctor` names a path
+that has moved. See [install.md](./install.md#the-git-hooks).
 
 ## What differs from the jj side
 

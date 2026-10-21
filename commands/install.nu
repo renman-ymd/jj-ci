@@ -53,29 +53,61 @@ def hooks [self_cmd: list<string>]: nothing -> int {
     return 1
   }
 
+  let existed = ($HOOKS | all { |name| ($dir | path join $name) | path exists })
+
   for name in $HOOKS {
     let dest = ($dir | path join $name)
     (body $name $self_cmd) | save --force --raw $dest
     chmod +x $dest
   }
 
-  print $"(ansi green)✓(ansi reset) wrote ($HOOKS | str join ' and ') to ($dir)"
-  info "`git push` now runs the push stage over what it would publish"
-  info "the commit-msg hook runs every description check against the message"
+  let verb = (if $existed { "refreshed" } else { "wrote" })
+  print $"(ansi green)✓(ansi reset) ($verb) ($HOOKS | str join ' and ') in ($dir)"
+  if $existed {
+    info $"they now run ($self_cmd | first)"
+  } else {
+    info "`git push` now runs the push stage over what it would publish"
+    info "the commit-msg hook runs every description check against the message"
+  }
   0
 }
 
 # The interpreter is named by absolute path because a git hook inherits
-# whatever environment the client that spawned it had, and a GUI client
-# usually has none of the user's PATH.
+# whatever environment the client that spawned it had, and a GUI client usually
+# has none of the user's PATH.
+#
+# That path is not forever: under Nix it moves on every update of nushell, and
+# jj-ci itself moves whenever it is reinstalled elsewhere. So the hook falls
+# back to PATH, which covers a terminal, and says what to do when neither
+# works rather than leaving the user a bare "No such file or directory".
 def body [name: string, self_cmd: list<string>]: nothing -> string {
-  let argv = ($self_cmd | each { |a| $'"($a)"' } | str join " ")
+  let interpreter = ($self_cmd | first)
+  let entry = ($self_cmd | last)
+  let middle = ($self_cmd | skip 1 | drop 1 | each { |a| sh-quote $a } | str join " ")
   let tail = (if $name == "commit-msg" { ' "$1"' } else { "" })
   ([
     "#!/bin/sh"
     $"($MARKER) Delete this file to remove the gate."
-    $"exec ($argv) hook ($name)($tail)"
+    "# Re-run `jj-ci install` after anything that moves these two paths."
+    $"nu=(sh-quote $interpreter)"
+    $"entry=(sh-quote $entry)"
+    ""
+    'if [ ! -x "$nu" ]; then'
+    '  nu=$(command -v nu 2>/dev/null) || nu=""'
+    'fi'
+    'if [ -z "$nu" ] || [ ! -f "$entry" ]; then'
+    $'  echo "jj-ci: cannot run the ($name) gate — nushell or jj-ci has moved." >&2'
+    '  echo "jj-ci: run \`jj-ci install\` in this repository to point the hook at them again." >&2'
+    '  exit 1'
+    'fi'
+    ""
+    $"exec \"$nu\" ($middle) \"$entry\" hook ($name)($tail)"
   ] | str join "\n") + "\n"
+}
+
+# Single quotes, so that a path holding a $ or a backtick reaches sh intact.
+def sh-quote [value: string]: nothing -> string {
+  "'" + ($value | str replace --all "'" "'\\''") + "'"
 }
 
 # Only a hook carrying the line this writes: a husky hook that happens to

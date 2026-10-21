@@ -102,10 +102,24 @@ export def invoke [bin: string, backend: string]: nothing -> int {
 def hook-state [repo: record, name: string]: nothing -> string {
   let path = (git hooks-dir $repo.root $repo.git_dir | path join $name)
   if not ($path | path exists) { return "not installed — run `jj-ci install`" }
-  if ((open --raw $path) | str contains "jj-ci") {
+
+  let body = (open --raw $path)
+  if not ($body | str contains "jj-ci") { return $"($path) — written by something else" }
+
+  # The hook holds the absolute paths it was installed with, and a nix rebuild
+  # moves them. It falls back to PATH, so a stale one still works in a
+  # terminal and fails in a GUI client, which is the confusing half.
+  let stale = (
+    $body
+    | lines
+    | parse --regex "^(?:nu|entry)='(?<path>.*)'$"
+    | get path
+    | where { |p| not ($p | path exists) }
+  )
+  if ($stale | is-empty) {
     $path
   } else {
-    $"($path) — written by something else"
+    $"($path) — points at ($stale | str join ', '), which has moved; run `jj-ci install`"
   }
 }
 
